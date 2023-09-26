@@ -1,0 +1,19 @@
+on:
+    workflow_dispatch:
+    push:
+      tags:
+        - "v*.*.*"
+
+jobs:  
+    build_scancode_for_ghcr:
+      name: Build ScanCode Docker image
+      runs-on: ubuntu-20.04
+  
+      steps:
+        - uses: actions/checkout@v2
+  
+        - name: Build and publish Docker image to ghcr.io/elrayle/scancode-toolkit
+          uses: macbre/push-to-ghcr@master
+          with:
+            image_name: ${{ github.repository }}
+            github_token: ${{ secrets.GH_TOKEN }}
