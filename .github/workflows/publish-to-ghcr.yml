@@ -5,16 +5,43 @@ on:
       tags:
         - "v*.*.*"
 
-jobs:  
+jobs:
+    set-tags:
+      runs-on: ubuntu-20.04
+      outputs:
+        tags: ${{ steps.set-tags.outputs.tags }}
+        main-tag: ${{ steps.set-tags.outputs.main-tag }}
+      steps:
+        - uses: actions/checkout@v2
+        - name: Set tags
+          id: set-tags
+          run: |
+            if [ ${{ github.ref_type }} = 'tag' ]; then
+              full_ref=${{ github.ref }}
+              vtag=${full_ref#refs/tags/}
+              echo "tags=${{ github.repository }}:${vtag},${{ github.repository }}:latest" >> "$GITHUB_OUTPUT"
+              echo "main-tag=${{ github.repository }}:${vtag}" >> "$GITHUB_OUTPUT"
+            else
+              echo "tags=${{ github.repository }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+              echo "main-tag=${{ github.repository }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            fi
+          shell: bash
+
     build_scancode_for_ghcr:
       name: Build ScanCode Docker image
       runs-on: ubuntu-20.04
-  
+      permissions:
+        contents: read
+        packages: write
+      needs: set-tags
       steps:
         - uses: actions/checkout@v2
   
         - name: Build and publish Docker image to ghcr.io/elrayle/scancode-toolkit
           uses: macbre/push-to-ghcr@master
+          env:
+            MAIN_TAG: ${{ needs.set-tags.outputs.main-tag }}
           with:
             image_name: ${{ github.repository }}
+            image_tag: ${{ env.MAIN_TAG }}
             github_token: ${{ secrets.GH_TOKEN }}
