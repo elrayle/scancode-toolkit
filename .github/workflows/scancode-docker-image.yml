@@ -1,0 +1,153 @@
+name: Build ScanCode Docker image
+
+ # This is executed automatically on a tag
+ #
+ # Summary of the steps:
+ # - Build a Docker image of scancode-toolkit based on the Dockerfile
+ # - Run scancode-toolkit on the Docker image to generate scan results
+ # - Build a new Docker image including the previously generated images plus scan results
+ # - Publish the new Docker image to ghcr.io/nexB/scancode-toolkit
+ # - Smoke test the new Docker image
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions: {}
+
+env:
+  TAG: $(date +%s)
+
+jobs:
+
+  setup-tags:
+    runs-on: ubuntu-latest
+    outputs:
+      tags: ${{ steps.set-tags.outputs.tags }}
+      main-tag: ${{ steps.set-tags.outputs.main-tag }}
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set tags
+        id: set-tags
+        run: |
+          if [ ${{ github.ref_type }} = 'tag' ]; then
+            full_ref=${{ github.ref }}
+            vtag=${full_ref#refs/tags/}
+            echo "tags=${{ github.repository }}:${vtag},${{ github.repository }}:latest" >> "$GITHUB_OUTPUT"
+            echo "main-tag=${{ github.repository }}:${vtag}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tags=${{ github.repository }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            echo "main-tag=${{ github.repository }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+        shell: bash
+
+  build-scancode-only-docker-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    needs: setup-tags
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build the Docker image and cache for use in next action
+        uses: docker/build-push-action@v4
+        env:
+          MAIN_TAG: ${{ needs.setup-tags.outputs.main-tag }}
+        with:
+          context: .
+          tags: ${{ env.MAIN_TAG }}
+          outputs: type=docker,dest=/tmp/scancode_only_image.tar
+
+      - name: Upload Docker image as artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: scancode-only-image
+          path: /tmp/scancode_only_image.tar
+
+  run-scancode-on-docker-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    needs: [setup-tags, build-scancode-only-docker-image]
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: scancode-only-image
+          path: /tmp/scancode_only_image.tar
+
+      - name: Load Docker image from artifact
+        run: docker load -i /tmp/scancode_only_image.tar
+
+      - name: Run ScanCode over cached Docker image
+        env:
+          MAIN_TAG: ${{ needs.setup-tags.outputs.main-tag }}
+        # TODO: This just outputs the version.  How to run ScanCode on the Docker image and produce scan results?
+        # TODO: Need output of scan to go to /tmp/scan-results
+        run: docker run --rm scancode-only-image:${{ env.MAIN_TAG }} --version
+        # with:
+        #   outputs: type=folder,dest=/tmp/scan-results
+
+      - name: Upload scan results as artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: scan-results
+          path: /tmp/scan-results
+
+  # TODO: This just builds the same image again. How to add scan results to the Docker image?
+  build-docker-image-with-scan-results:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    needs: [setup-tags, run-scancode-on-docker-image]
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: scan-results
+          path: /tmp/scan_results.tar
+
+      - name: Build the Docker image with scan results and export to ghcr.io
+        uses: docker/build-push-action@v4
+        env:
+          TAGS: ${{ needs.setup-tags.outputs.tags }}
+        with:
+          context: .
+          push: true
+          tags: ${{ env.TAGS }}
+
+        # run: |
+        #   echo "*****   building Docker image"
+        #   echo "*****   cmd: docker build . --tag ghcr.io/${{ github.repository }}:${{ env.TAG }}"
+        #   docker build . --tag ghcr.io/${{ github.repository }}:${{ env.TAG }}
+
+        #   echo "*****   pushing Docker image to ghcr.io"
+        #   echo "*****   cmd: docker push ghcr.io/${{ github.repository }}:${{ env.TAG }}"
+        #   docker push ghcr.io/${{ github.repository }}:${{ env.TAG }}
+
+
+  # smoke_test_docker_image:
+  #   name: Smoke test ScanCode Docker image
+  #   runs-on: ubuntu-20.04
+
+  #   steps:
+  #     - uses: actions/checkout@v2
+
+  #     - name: Run ScanCode Docker image
+  #       run: docker run --rm scancode-only-image:$(date +%s) --version
