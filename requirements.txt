@@ -15,8 +15,8 @@ cryptography==3.4.7
 debian-inspector==30.0.0
 dparse==0.5.1
 extractcode==21.7.23
-extractcode-7z==16.5.210531
-extractcode-libarchive==3.5.1.210531
+extractcode-7z>=16.5.210525
+extractcode-libarchive>=3.5.1.210525
 fasteners==0.16
 fingerprints==1.0.3
 ftfy==6.0.3
