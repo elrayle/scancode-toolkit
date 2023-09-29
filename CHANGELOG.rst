@@ -62,7 +62,14 @@ Outputs:
 
 - There is a new CycloneDX 1.2 output as XML and JSON.
 
+30.1.0.p1 - 2023-09-27
+--------------------
 
+This is a bug fix release for these bugs:
+
+- https://github.com/nexB/scancode-toolkit/issues/2746
+
+The fix is a backport of PR #2788.
 
 30.1.0 - 2021-09-25
 --------------------
